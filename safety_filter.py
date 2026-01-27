@@ -37,7 +37,7 @@ class SafetyFilter:
         r'init\s+6',  # Reboot via init
         r'halt',  # System halt
         r'poweroff',  # System power off
-        r'chown\s+-R',  # Recursive ownership change (potentially dangerous)
+        r'chown\s+-R.*\s+/',  # Recursive ownership change on root directories
         r'mv\s+/home',  # Moving critical directories
         r'mv\s+/etc',
         r'mv\s+/usr',

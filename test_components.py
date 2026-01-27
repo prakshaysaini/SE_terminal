@@ -155,9 +155,16 @@ def test_llm_handler():
     print("TESTING: LLM Handler Module (initialization only)")
     print("="*70)
     
+    import tempfile
+    
     # Create temporary .env for testing
-    with open('.env', 'w') as f:
-        f.write('OPENAI_API_KEY=sk-test-key-for-testing-only\n')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as tmp_env:
+        tmp_env.write('OPENAI_API_KEY=sk-test-key-for-testing-only\n')
+        tmp_env_path = tmp_env.name
+    
+    # Temporarily set the env file location
+    original_env = os.environ.get('OPENAI_API_KEY')
+    os.environ['OPENAI_API_KEY'] = 'sk-test-key-for-testing-only'
     
     try:
         from llm_handler import LLMHandler
@@ -180,8 +187,13 @@ def test_llm_handler():
         return False
     finally:
         # Clean up
-        if os.path.exists('.env'):
-            os.remove('.env')
+        if original_env:
+            os.environ['OPENAI_API_KEY'] = original_env
+        else:
+            os.environ.pop('OPENAI_API_KEY', None)
+        
+        if os.path.exists(tmp_env_path):
+            os.remove(tmp_env_path)
 
 
 def main():

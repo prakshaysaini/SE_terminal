@@ -46,6 +46,10 @@ class CommandExecutor:
         
         try:
             # Execute the command in a subprocess
+            # Note: Using shell=True is acceptable here because:
+            # 1. All commands are validated by SafetyFilter before reaching this point
+            # 2. We need shell features like pipes, redirects, and variable expansion
+            # 3. Commands are from a controlled source (LLM or direct user input after validation)
             result = subprocess.run(
                 command,
                 shell=True,

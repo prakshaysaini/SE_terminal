@@ -124,6 +124,11 @@ class AITerminal:
             )
             return
         
+        # Handle cd command specially since it needs to update working directory
+        if command.strip().startswith('cd '):
+            self._handle_cd_command(natural_language, command)
+            return
+        
         # Execute the command
         self.gui.display_info("Executing...")
         
@@ -146,13 +151,58 @@ class AITerminal:
         self.session_logger.log_interaction(
             natural_language, command, stdout, stderr, blocked=False
         )
+    
+    def _handle_cd_command(self, natural_language: str, command: str):
+        """
+        Handle cd command specially to update working directory.
         
-        # Update working directory in prompt if command changed it
-        if command.strip().startswith('cd '):
-            current_dir = os.path.basename(self.command_executor.get_working_directory())
-            if not current_dir:
-                current_dir = '/'
-            self.gui.update_prompt(f"~/{current_dir}" if current_dir != '/' else current_dir)
+        Args:
+            natural_language: Original natural language input
+            command: The cd command
+        """
+        # Extract the target directory
+        parts = command.strip().split(maxsplit=1)
+        if len(parts) == 1:
+            # cd with no argument goes to home
+            target_dir = os.path.expanduser('~')
+        else:
+            target_dir = parts[1].strip()
+        
+        # Expand ~ and resolve path
+        target_dir = os.path.expanduser(target_dir)
+        
+        # If relative path, make it relative to current working directory
+        if not os.path.isabs(target_dir):
+            target_dir = os.path.join(self.command_executor.get_working_directory(), target_dir)
+        
+        # Normalize the path
+        target_dir = os.path.normpath(target_dir)
+        
+        # Try to change directory
+        if os.path.exists(target_dir) and os.path.isdir(target_dir):
+            self.command_executor.set_working_directory(target_dir)
+            
+            # Update the prompt
+            if target_dir == os.path.expanduser('~'):
+                display_dir = "~"
+            elif target_dir.startswith(os.path.expanduser('~')):
+                display_dir = "~" + target_dir[len(os.path.expanduser('~')):]
+            else:
+                display_dir = target_dir
+            
+            self.gui.update_prompt(display_dir)
+            self.gui.display_info(f"Changed directory to: {target_dir}")
+            
+            # Log the interaction
+            self.session_logger.log_interaction(
+                natural_language, command, f"Changed to {target_dir}", "", blocked=False
+            )
+        else:
+            error_msg = f"cd: {target_dir}: No such file or directory"
+            self.gui.display_error(error_msg)
+            self.session_logger.log_interaction(
+                natural_language, command, "", error_msg, blocked=False
+            )
     
     def _display_help(self):
         """Display help information."""
