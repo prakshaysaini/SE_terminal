@@ -1,7 +1,37 @@
-# Software Requirement Specification (SRS)
-## AI-Powered Natural Language Linux Terminal Application
+# AI-Powered Natural Language Linux Terminal
 
-Submitted by:
+> Transform natural language into Linux commands with AI assistance
+
+[![Python](https://img.shields.io/badge/Python-3.7%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-See%20LICENSE-green.svg)](LICENSE)
+
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure API key
+cp .env.example .env
+nano .env  # Add your OpenAI API key
+
+# Run the application
+python3 main.py
+```
+
+📖 **[Complete Installation Guide](QUICKSTART.md)** | 📚 **[Full Documentation](USAGE.md)**
+
+## ✨ Features
+
+- 🗣️ Natural language command input
+- 🛡️ Automatic safety filtering
+- 🎨 Terminal-style GUI
+- 📊 Session history and logging
+- 🔒 Secure command execution
+
+---
+
+**Project Team:**
 - Rishabh Kumar Jain (2301175)
 - Rahul Yadav (2301168)
 - Prakshay Saini (2301149)
@@ -9,6 +39,10 @@ Submitted by:
 Department: Computer Science and Engineering  
 Institute: Indian Institute of Information Technology, Guwahati  
 Academic Year: 2025–2026
+
+---
+
+# Software Requirement Specification (SRS)
 
 ---
 
