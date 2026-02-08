@@ -1,0 +1,9 @@
+In an ubuntu environment Install a C compiler and Cmake and QT6 framework.
+-- sudo apt update
+-- sudo apt install build-essential cmake qt6-base-dev qt6-declarative-dev libgl1-mesa-dev libglu1-mesa-dev
+
+Compiling the application using CMake (Run these commands in the same directory as CMakeLists.txt)
+-- cmake -S . -B build // this command reads CMakeLists.txt and checks system for necessary tools -S specifies source directory and -B specifies build directory
+-- cmake --build build // this runs and compiles the source code
+-- ./build/SE_terminal // this runs the application
+
