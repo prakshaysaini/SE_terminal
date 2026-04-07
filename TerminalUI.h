@@ -5,6 +5,7 @@
 #include <QSet>
 
 class LocalLLMService;
+class DataAccessLayer;
 
 class TerminalUI : public QPlainTextEdit {
   Q_OBJECT
@@ -14,9 +15,11 @@ public:
 
 private:
   LocalLLMService *llm;
+  DataAccessLayer *dal;
   QString currentDir;
   QString pendingInput;
   bool inputLocked = false;
+  int currentSessionId = -1;
 
   static const QSet<QString> SHELL_COMMANDS;
 
@@ -41,4 +44,4 @@ private slots:
   void onAvailabilityChecked(bool ok, const QString &modelName);
 };
 
-#endif // TERMINAL_UI_H
+#endif

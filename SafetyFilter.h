@@ -57,4 +57,4 @@ inline SafetyResult isSafeCommand(const QString &cmd) {
   return {true, ""};
 }
 
-#endif // SAFETY_FILTER_H
+#endif 

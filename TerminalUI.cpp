@@ -1,5 +1,6 @@
 #include "TerminalUI.h"
 #include "LocalLLMService.h"
+#include "DataAccessLayer.h"
 #include "SafetyFilter.h"
 
 #include <QApplication>
@@ -19,6 +20,18 @@ TerminalUI::TerminalUI(QWidget *parent) : QPlainTextEdit(parent) {
 
   currentDir = QDir::homePath();
 
+  // Initialize Data Access Layer
+  dal = new DataAccessLayer("terminal_app.db");
+  if (!dal->initializeDatabase()) {
+    appendPlainText("[WARNING] Failed to initialize database: " + dal->getLastError());
+  }
+
+  // Create a new session
+  currentSessionId = dal->createSession("Terminal Session", currentDir);
+  if (currentSessionId != -1) {
+    dal->addSystemLog("INFO", "Session started", "TerminalUI", currentSessionId);
+  }
+
   llm = new LocalLLMService(this);
   connect(llm, &LocalLLMService::commandReady, this,
           &TerminalUI::onCommandReady);
@@ -32,10 +45,8 @@ TerminalUI::TerminalUI(QWidget *parent) : QPlainTextEdit(parent) {
 }
 
 void TerminalUI::printBanner() {
-  appendPlainText("╔══════════════════════════════════════════════════════╗");
-  appendPlainText("║       SE Terminal  ·  AI-Powered Linux Shell         ║");
-  appendPlainText("║       Model: Llama 3.1 8B                            ║");
-  appendPlainText("╚══════════════════════════════════════════════════════╝");
+  appendPlainText("       SE TERMINAL  ·  AI-POWERED LINUX TERMINAL        ");
+  appendPlainText("       Model: Llama 3.1 8B                            ");
 }
 
 void TerminalUI::newPrompt() {

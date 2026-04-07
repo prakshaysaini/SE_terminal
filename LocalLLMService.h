@@ -31,4 +31,4 @@ private:
   static QString cleanResponse(QString s);
 };
 
-#endif // LOCAL_LLM_SERVICE_H
+#endif 
