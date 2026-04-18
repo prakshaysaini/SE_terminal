@@ -1,8 +1,10 @@
 #ifndef TERMINAL_UI_H
 #define TERMINAL_UI_H
 
+#include "TerminalHighlighter.h"
 #include <QPlainTextEdit>
 #include <QSet>
+#include <vector>
 
 class LocalLLMService;
 class DataAccessLayer;
@@ -20,13 +22,31 @@ private:
   QString pendingInput;
   bool inputLocked = false;
   int currentSessionId = -1;
+  int inputStartPos = 0;
 
   static const QSet<QString> SHELL_COMMANDS;
 
+  //  History
+  std::vector<QString> history;
+  int historyIndex = 0;
+  QString currentBuffer;
+
+  //  Theming & Syntax Highlighting
+  TerminalHighlighter *highlighter;
+  bool isDarkTheme = true;
+  void applyTheme();
+
+  //  UI helpers
   void printBanner();
   void newPrompt();
   void appendLine(const QString &text);
+  void replaceCurrentLine(const QString &text);
 
+  //  Autocomplete
+  void handleAutocomplete();
+  bool lastKeyWasTab = false;
+
+  //  Core logic
   void onCommandSubmitted(const QString &raw);
   void handleCd(const QString &raw);
   void execute(const QString &cmd);
@@ -37,11 +57,13 @@ private:
 
 protected:
   void keyPressEvent(QKeyEvent *event) override;
+  void contextMenuEvent(QContextMenuEvent *event) override;
 
 private slots:
   void onCommandReady(const QString &cmd);
   void onOllamaError(const QString &msg);
   void onAvailabilityChecked(bool ok, const QString &modelName);
+  void toggleTheme();
 };
 
 #endif
