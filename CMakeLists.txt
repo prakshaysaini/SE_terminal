@@ -8,8 +8,10 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Network Sql)
 
 add_executable(SE_terminal
     main.cpp
+    MainWindow.cpp
     LocalLLMService.cpp
     TerminalUI.cpp
+    TerminalHighlighter.cpp
     DataAccessLayer.cpp
 )
 
