@@ -22,7 +22,6 @@ private:
   QString pendingInput;
   bool inputLocked = false;
   int currentSessionId = -1;
-  int inputStartPos = 0;
 
   static const QSet<QString> SHELL_COMMANDS;
 

@@ -306,9 +306,8 @@ void TerminalUI::onCommandSubmitted(const QString &raw) {
     return;
   }
   if (raw == "help") {
+    appendLine(helpText());
     newPrompt();
-    newPrompt();
-
     return;
   }
   if (raw == "pwd") {
@@ -373,6 +372,13 @@ void TerminalUI::execute(const QString &cmd) {
   SafetyResult check = isSafeCommand(cmd);
   if (!check.isSafe) {
     appendLine("[BLOCKED] " + check.reason + "\nCommand: " + cmd);
+    // Record blocked command in database
+    if (currentSessionId != -1) {
+      int cmdId = dal->recordCommand(currentSessionId, pendingInput.isEmpty() ? cmd : pendingInput, cmd, false, check.reason);
+      if (cmdId != -1) {
+        dal->updateCommandStatus(cmdId, "BLOCKED");
+      }
+    }
     newPrompt();
     return;
   }
@@ -383,12 +389,30 @@ void TerminalUI::execute(const QString &cmd) {
   if (!proc.waitForFinished(15000)) {
     proc.kill();
     appendLine("[ERROR] Command timed out after 15 seconds.");
+    // Record timed-out command in database
+    if (currentSessionId != -1) {
+      int cmdId = dal->recordCommand(currentSessionId, pendingInput.isEmpty() ? cmd : pendingInput, cmd, true);
+      if (cmdId != -1) {
+        dal->updateCommandStatus(cmdId, "FAILED");
+        dal->updateCommandExecution(cmdId, "", "Command timed out", -1, 15000);
+      }
+    }
     newPrompt();
     return;
   }
 
   QString out = QString::fromLocal8Bit(proc.readAllStandardOutput()).trimmed();
   QString err = QString::fromLocal8Bit(proc.readAllStandardError()).trimmed();
+
+  // Record successful command in database
+  if (currentSessionId != -1) {
+    int cmdId = dal->recordCommand(currentSessionId, pendingInput.isEmpty() ? cmd : pendingInput, cmd, true);
+    if (cmdId != -1) {
+      QString status = (proc.exitCode() == 0) ? "EXECUTED" : "FAILED";
+      dal->updateCommandStatus(cmdId, status);
+      dal->updateCommandExecution(cmdId, out, err, proc.exitCode(), 0);
+    }
+  }
 
   if (!out.isEmpty())
     appendLine(out);
@@ -424,7 +448,7 @@ void TerminalUI::onAvailabilityChecked(bool ok, const QString &modelName) {
   else
     appendLine("[INFO]  Ollama not found.\n"
                "    Run: ollama serve\n"
-               "    Then: ollama pull llama3.1:8b");
+               "    Then: ollama pull deepseek-coder:1.3b");
   newPrompt();
 }
 
@@ -435,6 +459,42 @@ bool TerminalUI::isShellCommand(const QString &input) {
     return true;
   QString first = input.split(' ', Qt::SkipEmptyParts).first().toLower();
   return SHELL_COMMANDS.contains(first);
+}
+
+QString TerminalUI::helpText() {
+  return QString(
+    "\n╔══════════════════════════════════════════════════════════════╗\n"
+    "║            SE TERMINAL — HELP & COMMANDS                   ║\n"
+    "╠══════════════════════════════════════════════════════════════╣\n"
+    "║  BUILT-IN COMMANDS:                                        ║\n"
+    "║    help      — Show this help message                      ║\n"
+    "║    clear     — Clear the terminal screen                   ║\n"
+    "║    exit/quit — Close the terminal                          ║\n"
+    "║    pwd       — Print current working directory              ║\n"
+    "║    cd <dir>  — Change directory                            ║\n"
+    "║                                                            ║\n"
+    "║  AI MODE:                                                  ║\n"
+    "║    Type any natural language instruction and the AI will   ║\n"
+    "║    translate it to a bash command automatically.           ║\n"
+    "║    Example: 'show all files' → ls -la                     ║\n"
+    "║                                                            ║\n"
+    "║  SHELL COMMANDS:                                           ║\n"
+    "║    All standard Linux commands (ls, cat, grep, etc.)       ║\n"
+    "║    are executed directly in the shell.                     ║\n"
+    "║                                                            ║\n"
+    "║  FORCE SHELL:                                              ║\n"
+    "║    Prefix with ! to force shell execution.                 ║\n"
+    "║    Example: !echo Hello World                              ║\n"
+    "║                                                            ║\n"
+    "║  SHORTCUTS:                                                ║\n"
+    "║    Ctrl+T    — New tab                                     ║\n"
+    "║    Ctrl+W    — Close tab                                   ║\n"
+    "║    Ctrl+C    — Cancel AI generation                        ║\n"
+    "║    Tab       — Autocomplete commands/files                 ║\n"
+    "║    Up/Down   — Browse command history                      ║\n"
+    "║    Right-click — Context menu (copy, paste, theme)         ║\n"
+    "╚══════════════════════════════════════════════════════════════╝"
+  );
 }
 
 const QSet<QString> TerminalUI::SHELL_COMMANDS = {

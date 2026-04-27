@@ -2,6 +2,12 @@
 #include <QCoreApplication>
 #include <iostream>
 
+// ===========================================================================
+//  OLD ASSIGNMENT — White Box + Black Box Testing
+//  Run: ./test_runner
+//  Report: wb_bb_test_report.txt
+// ===========================================================================
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     
@@ -28,6 +34,7 @@ int main(int argc, char *argv[]) {
                  "Black Box", &BlackBoxTests::test_System_PersistenceAndStability);
 
     suite.runAll();
+    suite.generateReport("wb_bb_test_report.txt");
     
     return 0;
 }

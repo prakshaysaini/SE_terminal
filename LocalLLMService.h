@@ -10,7 +10,7 @@ class LocalLLMService : public QObject {
 
 public:
   explicit LocalLLMService(QObject *parent = nullptr,
-                           const QString &model = "llama3.1:8b",
+                           const QString &model = "deepseek-coder:1.3b",
                            const QString &url = "http://localhost:11434");
 
   void generateCommand(const QString &input, const QString &cwd = {});

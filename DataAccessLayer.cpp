@@ -13,12 +13,17 @@
 
 DataAccessLayer::DataAccessLayer(const QString &dbPath)
     : databasePath(dbPath) {
-    db = QSqlDatabase::addDatabase("QSQLITE");
+    // Use a unique connection name to avoid "duplicate connection" warnings
+    QString connectionName = "dal_" + QString::number(reinterpret_cast<quintptr>(this), 16);
+    db = QSqlDatabase::addDatabase("QSQLITE", connectionName);
     db.setDatabaseName(databasePath);
 }
 
 DataAccessLayer::~DataAccessLayer() {
+    QString connectionName = db.connectionName();
     closeConnection();
+    db = QSqlDatabase();  // Release handle before removing
+    QSqlDatabase::removeDatabase(connectionName);
 }
 
 bool DataAccessLayer::initializeDatabase() {
@@ -85,7 +90,7 @@ bool DataAccessLayer::initializeDatabase() {
     };
 
     for (const QString &statement : createStatements) {
-        QSqlQuery query;
+        QSqlQuery query(db);
         if (!query.exec(statement)) {
             lastError = "Failed to create table: " + query.lastError().text();
             qWarning() << "SQL Error: " << lastError;
@@ -105,7 +110,7 @@ bool DataAccessLayer::initializeDatabase() {
     };
 
     for (const QString &statement : indexStatements) {
-        QSqlQuery query;
+        QSqlQuery query(db);
         if (!query.exec(statement)) {
             qWarning() << "Index creation warning: " << query.lastError().text();
         }
@@ -137,9 +142,9 @@ QString DataAccessLayer::getLastError() const {
 }
 
 int DataAccessLayer::createSession(const QString &sessionName, const QString &workingDir) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("INSERT INTO sessions (session_name, working_directory, session_status) "
-                  "VALUES (:name, :dir, 'ACTIVE')");
+                  "VALUES (?, ?, 'ACTIVE')");
     query.addBindValue(sessionName);
     query.addBindValue(workingDir);
 
@@ -151,24 +156,24 @@ int DataAccessLayer::createSession(const QString &sessionName, const QString &wo
 }
 
 bool DataAccessLayer::updateSessionEndTime(int sessionId) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("UPDATE sessions SET end_time = CURRENT_TIMESTAMP, session_status = 'CLOSED' "
-                  "WHERE session_id = :id");
+                  "WHERE session_id = ?");
     query.addBindValue(sessionId);
     return query.exec();
 }
 
 bool DataAccessLayer::updateSessionStatus(int sessionId, const QString &status) {
-    QSqlQuery query;
-    query.prepare("UPDATE sessions SET session_status = :status WHERE session_id = :id");
+    QSqlQuery query(db);
+    query.prepare("UPDATE sessions SET session_status = ? WHERE session_id = ?");
     query.addBindValue(status);
     query.addBindValue(sessionId);
     return query.exec();
 }
 
 bool DataAccessLayer::updateSessionTotalCommands(int sessionId, int count) {
-    QSqlQuery query;
-    query.prepare("UPDATE sessions SET total_commands = :count WHERE session_id = :id");
+    QSqlQuery query(db);
+    query.prepare("UPDATE sessions SET total_commands = ? WHERE session_id = ?");
     query.addBindValue(count);
     query.addBindValue(sessionId);
     return query.exec();
@@ -176,8 +181,8 @@ bool DataAccessLayer::updateSessionTotalCommands(int sessionId, int count) {
 
 Session DataAccessLayer::getSession(int sessionId) {
     Session session = {-1, "", QDateTime(), QDateTime(), "", "", 0, ""};
-    QSqlQuery query;
-    query.prepare("SELECT * FROM sessions WHERE session_id = :id");
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM sessions WHERE session_id = ?");
     query.addBindValue(sessionId);
 
     if (query.exec() && query.next()) {
@@ -195,7 +200,8 @@ Session DataAccessLayer::getSession(int sessionId) {
 
 QList<Session> DataAccessLayer::getAllSessions() {
     QList<Session> sessions;
-    QSqlQuery query("SELECT * FROM sessions ORDER BY start_time DESC");
+    QSqlQuery query(db);
+    query.exec("SELECT * FROM sessions ORDER BY start_time DESC");
 
     while (query.next()) {
         Session session;
@@ -214,7 +220,7 @@ QList<Session> DataAccessLayer::getAllSessions() {
 
 QList<Session> DataAccessLayer::getActiveSessions() {
     QList<Session> sessions;
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("SELECT * FROM sessions WHERE session_status = 'ACTIVE' ORDER BY start_time DESC");
 
     if (query.exec()) {
@@ -236,8 +242,8 @@ QList<Session> DataAccessLayer::getActiveSessions() {
 
 QList<Session> DataAccessLayer::getSessionsBetween(const QDateTime &start, const QDateTime &end) {
     QList<Session> sessions;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM sessions WHERE start_time BETWEEN :start AND :end "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM sessions WHERE start_time BETWEEN ? AND ? "
                   "ORDER BY start_time DESC");
     query.addBindValue(start);
     query.addBindValue(end);
@@ -260,8 +266,8 @@ QList<Session> DataAccessLayer::getSessionsBetween(const QDateTime &start, const
 }
 
 bool DataAccessLayer::deleteSession(int sessionId) {
-    QSqlQuery query;
-    query.prepare("DELETE FROM sessions WHERE session_id = :id");
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM sessions WHERE session_id = ?");
     query.addBindValue(sessionId);
     return query.exec();
 }
@@ -269,10 +275,10 @@ bool DataAccessLayer::deleteSession(int sessionId) {
 int DataAccessLayer::recordCommand(int sessionId, const QString &userInput,
                                    const QString &generatedCommand, bool isSafe,
                                    const QString &safetyReason) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("INSERT INTO command_history "
                   "(session_id, user_input, generated_command, execution_status, is_safe, safety_reason) "
-                  "VALUES (:session, :input, :cmd, 'EXECUTED', :safe, :reason)");
+                  "VALUES (?, ?, ?, 'EXECUTED', ?, ?)");
     query.addBindValue(sessionId);
     query.addBindValue(userInput);
     query.addBindValue(generatedCommand);
@@ -289,10 +295,10 @@ int DataAccessLayer::recordCommand(int sessionId, const QString &userInput,
 bool DataAccessLayer::updateCommandExecution(int commandId, const QString &output,
                                             const QString &errorOutput, int exitCode,
                                             double executionTimeMs) {
-    QSqlQuery query;
-    query.prepare("UPDATE command_history SET command_output = :output, "
-                  "error_output = :error, exit_code = :code, "
-                  "execution_time_ms = :time WHERE command_id = :id");
+    QSqlQuery query(db);
+    query.prepare("UPDATE command_history SET command_output = ?, "
+                  "error_output = ?, exit_code = ?, "
+                  "execution_time_ms = ? WHERE command_id = ?");
     query.addBindValue(output);
     query.addBindValue(errorOutput);
     query.addBindValue(exitCode);
@@ -302,8 +308,8 @@ bool DataAccessLayer::updateCommandExecution(int commandId, const QString &outpu
 }
 
 bool DataAccessLayer::updateCommandStatus(int commandId, const QString &status) {
-    QSqlQuery query;
-    query.prepare("UPDATE command_history SET execution_status = :status WHERE command_id = :id");
+    QSqlQuery query(db);
+    query.prepare("UPDATE command_history SET execution_status = ? WHERE command_id = ?");
     query.addBindValue(status);
     query.addBindValue(commandId);
     return query.exec();
@@ -311,8 +317,8 @@ bool DataAccessLayer::updateCommandStatus(int commandId, const QString &status) 
 
 CommandRecord DataAccessLayer::getCommandRecord(int commandId) {
     CommandRecord record = {-1, -1, "", "", "", 0, "", "", 0.0, QDateTime(), false, ""};
-    QSqlQuery query;
-    query.prepare("SELECT * FROM command_history WHERE command_id = :id");
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM command_history WHERE command_id = ?");
     query.addBindValue(commandId);
 
     if (query.exec() && query.next()) {
@@ -334,8 +340,8 @@ CommandRecord DataAccessLayer::getCommandRecord(int commandId) {
 
 QList<CommandRecord> DataAccessLayer::getCommandHistory(int sessionId) {
     QList<CommandRecord> records;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM command_history WHERE session_id = :session_id "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM command_history WHERE session_id = ? "
                   "ORDER BY timestamp DESC");
     query.addBindValue(sessionId);
 
@@ -362,8 +368,8 @@ QList<CommandRecord> DataAccessLayer::getCommandHistory(int sessionId) {
 
 QList<CommandRecord> DataAccessLayer::getFailedCommands(int sessionId) {
     QList<CommandRecord> records;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM command_history WHERE session_id = :session_id "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM command_history WHERE session_id = ? "
                   "AND execution_status = 'FAILED' ORDER BY timestamp DESC");
     query.addBindValue(sessionId);
 
@@ -390,8 +396,8 @@ QList<CommandRecord> DataAccessLayer::getFailedCommands(int sessionId) {
 
 QList<CommandRecord> DataAccessLayer::getBlockedCommands(int sessionId) {
     QList<CommandRecord> records;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM command_history WHERE session_id = :session_id "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM command_history WHERE session_id = ? "
                   "AND (execution_status = 'BLOCKED' OR is_safe = 0) ORDER BY timestamp DESC");
     query.addBindValue(sessionId);
 
@@ -417,8 +423,8 @@ QList<CommandRecord> DataAccessLayer::getBlockedCommands(int sessionId) {
 }
 
 int DataAccessLayer::getTotalCommandsExecuted(int sessionId) {
-    QSqlQuery query;
-    query.prepare("SELECT COUNT(*) as count FROM command_history WHERE session_id = :session_id");
+    QSqlQuery query(db);
+    query.prepare("SELECT COUNT(*) as count FROM command_history WHERE session_id = ?");
     query.addBindValue(sessionId);
 
     if (query.exec() && query.next()) {
@@ -428,18 +434,18 @@ int DataAccessLayer::getTotalCommandsExecuted(int sessionId) {
 }
 
 bool DataAccessLayer::deleteCommandRecord(int commandId) {
-    QSqlQuery query;
-    query.prepare("DELETE FROM command_history WHERE command_id = :id");
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM command_history WHERE command_id = ?");
     query.addBindValue(commandId);
     return query.exec();
 }
 
 bool DataAccessLayer::cacheCommand(const QString &commandHash, const QString &originalCommand,
                                   const QString &llmGeneratedCommand) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("INSERT OR IGNORE INTO command_cache "
                   "(command_hash, original_command, llm_generated_command) "
-                  "VALUES (:hash, :original, :generated)");
+                  "VALUES (?, ?, ?)");
     query.addBindValue(commandHash);
     query.addBindValue(originalCommand);
     query.addBindValue(llmGeneratedCommand);
@@ -447,8 +453,8 @@ bool DataAccessLayer::cacheCommand(const QString &commandHash, const QString &or
 }
 
 QString DataAccessLayer::getCachedCommand(const QString &commandHash) {
-    QSqlQuery query;
-    query.prepare("SELECT llm_generated_command FROM command_cache WHERE command_hash = :hash");
+    QSqlQuery query(db);
+    query.prepare("SELECT llm_generated_command FROM command_cache WHERE command_hash = ?");
     query.addBindValue(commandHash);
 
     if (query.exec() && query.next()) {
@@ -459,16 +465,17 @@ QString DataAccessLayer::getCachedCommand(const QString &commandHash) {
 }
 
 bool DataAccessLayer::updateCacheUsage(const QString &commandHash) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("UPDATE command_cache SET usage_count = usage_count + 1, "
-                  "last_used = CURRENT_TIMESTAMP WHERE command_hash = :hash");
+                  "last_used = CURRENT_TIMESTAMP WHERE command_hash = ?");
     query.addBindValue(commandHash);
     return query.exec();
 }
 
 QList<CommandCacheRecord> DataAccessLayer::getAllCachedCommands() {
     QList<CommandCacheRecord> records;
-    QSqlQuery query("SELECT * FROM command_cache ORDER BY usage_count DESC");
+    QSqlQuery query(db);
+    query.exec("SELECT * FROM command_cache ORDER BY usage_count DESC");
 
     while (query.next()) {
         CommandCacheRecord record;
@@ -485,22 +492,22 @@ QList<CommandCacheRecord> DataAccessLayer::getAllCachedCommands() {
 }
 
 bool DataAccessLayer::clearOldCacheEntries(int daysOld) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("DELETE FROM command_cache WHERE "
-                  "datetime(last_used) < datetime('now', '-' || :days || ' days')");
+                  "datetime(last_used) < datetime('now', '-' || ? || ' days')");
     query.addBindValue(daysOld);
     return query.exec();
 }
 
 int DataAccessLayer::addSystemLog(const QString &level, const QString &message,
                                  const QString &component, int sessionId) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("INSERT INTO system_logs (log_level, log_message, component, session_id) "
-                  "VALUES (:level, :message, :component, :session)");
+                  "VALUES (?, ?, ?, ?)");
     query.addBindValue(level);
     query.addBindValue(message);
     query.addBindValue(component);
-    query.addBindValue(sessionId == -1 ? QVariant(QVariant::Int) : sessionId);
+    query.addBindValue(sessionId == -1 ? QVariant(QMetaType(QMetaType::Int)) : sessionId);
 
     if (!query.exec()) {
         lastError = "Failed to add system log: " + query.lastError().text();
@@ -511,11 +518,11 @@ int DataAccessLayer::addSystemLog(const QString &level, const QString &message,
 
 QList<SystemLog> DataAccessLayer::getSystemLogs(const QString &level) {
     QList<SystemLog> logs;
-    QSqlQuery query;
+    QSqlQuery query(db);
     if (level.isEmpty()) {
         query.prepare("SELECT * FROM system_logs ORDER BY timestamp DESC LIMIT 1000");
     } else {
-        query.prepare("SELECT * FROM system_logs WHERE log_level = :level "
+        query.prepare("SELECT * FROM system_logs WHERE log_level = ? "
                       "ORDER BY timestamp DESC LIMIT 1000");
         query.addBindValue(level);
     }
@@ -537,8 +544,8 @@ QList<SystemLog> DataAccessLayer::getSystemLogs(const QString &level) {
 
 QList<SystemLog> DataAccessLayer::getSystemLogsByComponent(const QString &component) {
     QList<SystemLog> logs;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM system_logs WHERE component = :component "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM system_logs WHERE component = ? "
                   "ORDER BY timestamp DESC LIMIT 1000");
     query.addBindValue(component);
 
@@ -559,8 +566,8 @@ QList<SystemLog> DataAccessLayer::getSystemLogsByComponent(const QString &compon
 
 QList<SystemLog> DataAccessLayer::getSystemLogsBetween(const QDateTime &start, const QDateTime &end) {
     QList<SystemLog> logs;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM system_logs WHERE timestamp BETWEEN :start AND :end "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM system_logs WHERE timestamp BETWEEN ? AND ? "
                   "ORDER BY timestamp DESC");
     query.addBindValue(start);
     query.addBindValue(end);
@@ -583,11 +590,11 @@ QList<SystemLog> DataAccessLayer::getSystemLogsBetween(const QDateTime &start, c
 int DataAccessLayer::recordPerformanceMetric(int sessionId, int commandId,
                                             double llmResponseTime, double safetyCheckTime,
                                             double commandExecutionTime) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("INSERT INTO performance_metrics "
                   "(session_id, command_id, llm_response_time_ms, safety_check_time_ms, "
                   "command_execution_time_ms, total_time_ms) "
-                  "VALUES (:session, :command, :llm, :safety, :exec, :total)");
+                  "VALUES (?, ?, ?, ?, ?, ?)");
     query.addBindValue(sessionId);
     query.addBindValue(commandId);
     query.addBindValue(llmResponseTime);
@@ -604,8 +611,8 @@ int DataAccessLayer::recordPerformanceMetric(int sessionId, int commandId,
 
 QList<PerformanceMetric> DataAccessLayer::getMetricsForSession(int sessionId) {
     QList<PerformanceMetric> metrics;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM performance_metrics WHERE session_id = :session_id "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM performance_metrics WHERE session_id = ? "
                   "ORDER BY timestamp DESC");
     query.addBindValue(sessionId);
 
@@ -628,8 +635,8 @@ QList<PerformanceMetric> DataAccessLayer::getMetricsForSession(int sessionId) {
 
 QList<PerformanceMetric> DataAccessLayer::getMetricsForCommand(int commandId) {
     QList<PerformanceMetric> metrics;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM performance_metrics WHERE command_id = :command_id "
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM performance_metrics WHERE command_id = ? "
                   "ORDER BY timestamp DESC");
     query.addBindValue(commandId);
 
@@ -651,9 +658,9 @@ QList<PerformanceMetric> DataAccessLayer::getMetricsForCommand(int commandId) {
 }
 
 double DataAccessLayer::getAverageLLMResponseTime(int sessionId) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("SELECT AVG(llm_response_time_ms) as avg FROM performance_metrics "
-                  "WHERE session_id = :session_id");
+                  "WHERE session_id = ?");
     query.addBindValue(sessionId);
 
     if (query.exec() && query.next()) {
@@ -663,9 +670,9 @@ double DataAccessLayer::getAverageLLMResponseTime(int sessionId) {
 }
 
 double DataAccessLayer::getAverageSafetyCheckTime(int sessionId) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("SELECT AVG(safety_check_time_ms) as avg FROM performance_metrics "
-                  "WHERE session_id = :session_id");
+                  "WHERE session_id = ?");
     query.addBindValue(sessionId);
 
     if (query.exec() && query.next()) {
@@ -675,9 +682,9 @@ double DataAccessLayer::getAverageSafetyCheckTime(int sessionId) {
 }
 
 int DataAccessLayer::getCommandCountByStatus(int sessionId, const QString &status) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("SELECT COUNT(*) as count FROM command_history "
-                  "WHERE session_id = :session_id AND execution_status = :status");
+                  "WHERE session_id = ? AND execution_status = ?");
     query.addBindValue(sessionId);
     query.addBindValue(status);
 
@@ -688,9 +695,9 @@ int DataAccessLayer::getCommandCountByStatus(int sessionId, const QString &statu
 }
 
 int DataAccessLayer::getSafeCommandCount(int sessionId) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("SELECT COUNT(*) as count FROM command_history "
-                  "WHERE session_id = :session_id AND is_safe = 1");
+                  "WHERE session_id = ? AND is_safe = 1");
     query.addBindValue(sessionId);
 
     if (query.exec() && query.next()) {
@@ -700,9 +707,9 @@ int DataAccessLayer::getSafeCommandCount(int sessionId) {
 }
 
 int DataAccessLayer::getBlockedCommandCount(int sessionId) {
-    QSqlQuery query;
+    QSqlQuery query(db);
     query.prepare("SELECT COUNT(*) as count FROM command_history "
-                  "WHERE session_id = :session_id AND is_safe = 0");
+                  "WHERE session_id = ? AND is_safe = 0");
     query.addBindValue(sessionId);
 
     if (query.exec() && query.next()) {
@@ -713,9 +720,9 @@ int DataAccessLayer::getBlockedCommandCount(int sessionId) {
 
 QList<CommandRecord> DataAccessLayer::getCommandsSince(int sessionId, const QDateTime &since) {
     QList<CommandRecord> records;
-    QSqlQuery query;
-    query.prepare("SELECT * FROM command_history WHERE session_id = :session_id "
-                  "AND timestamp >= :since ORDER BY timestamp DESC");
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM command_history WHERE session_id = ? "
+                  "AND timestamp >= ? ORDER BY timestamp DESC");
     query.addBindValue(sessionId);
     query.addBindValue(since);
 
@@ -744,9 +751,8 @@ bool DataAccessLayer::clearAllData() {
     QStringList tables = {"command_history", "performance_metrics", "system_logs", 
                          "command_cache", "sessions"};
     for (const QString &table : tables) {
-        QSqlQuery query;
-        query.prepare("DELETE FROM " + table);
-        if (!query.exec()) {
+        QSqlQuery query(db);
+        if (!query.exec("DELETE FROM " + table)) {
             lastError = "Failed to clear table " + table;
             return false;
         }
@@ -762,9 +768,9 @@ bool DataAccessLayer::backupDatabase(const QString &backupPath) {
     return QFile::copy(databasePath, backupPath);
 }
 
-QVariant DataAccessLayer::executeRawQuery(const QString &query) {
-    QSqlQuery q;
-    if (q.exec(query)) {
+QVariant DataAccessLayer::executeRawQuery(const QString &queryStr) {
+    QSqlQuery q(db);
+    if (q.exec(queryStr)) {
         return true;
     }
     lastError = q.lastError().text();
